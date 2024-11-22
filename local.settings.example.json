@@ -1,0 +1,20 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "<your_SA_endpoint_>", 
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "ACCOUNTS_LIST": "['DZ', 'QR', 'BI']",
+    "DZ_VAULT_NAME": "dz-keyvault",
+    "QR_VAULT_NAME": "qr-keyvault",
+    "BI_VAULT_NAME": "bi-keyvault",
+    "CLIENT_ID": "client-identifier", 
+    "CLIENT_SECRET": "client-secret",
+    "REFRESH_TOKEN": "refresh-token",
+    "ROTATION_DEADLINE": "rotation-deadline",
+    "STORAGE_ACCOUNT_NAME": "my-sa",
+    "ON_HAND_BLOB_CONTAINER_NAME": "onhandblobs",
+    "TOKEN_REQUEST_URL": "https://api.amazon.com/auth/o2/token",
+    "MARKETPLACE_ID": "ATVPDKIKX0DER",
+    "ENDPOINT": "https://sellingpartnerapi-na.amazon.com/reports/2021-06-30"
+  }
+}
