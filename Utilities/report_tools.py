@@ -19,8 +19,10 @@ import requests as req
 
 from Utilities.utils import Helpers, Style
 
+
 class ZeroSalesError(Exception):
     pass
+
 
 class GenerateFBAReport:
     """Downloads data from the Amazon Reports SP-API
@@ -46,7 +48,8 @@ class GenerateFBAReport:
         (c). In your Function App, create the env-variables specified in (2)
         (d). If you have several accounts, create a separate KV for each, and add acc initials to ACCOUNTS_LIST
 
-        In this scenario, modify ACCOUNTS_LIST to include 'PO' (e.g. "['acc1', 'PO']")
+        In this scenario, modify ACCOUNTS_LIST to include 'PO' (e.g. ['PO','ACC1','ACC2'])
+        If you only have one account, ACCOUNTS_LIST must still be a list (e.g. ['PO'])
         Then, create an env-var "PO_VAULT_NAME" - its value would be the name of the KV ("po-kv")
         Next, pass the SPI-API keys from (1) as Function App env-variables - title them exactly as shown in (2)
         For example, within KV "po-kv" create secret name "po-client-secret" with secret value "ABCD1234"
@@ -57,8 +60,8 @@ class GenerateFBAReport:
 
         'MARKETPLACE_ID', 'ENDPOINT', 'TOKEN_REQUEST_URL' can be simply entered as env-variables without KV
              
-                
-    Considerations:        
+             
+    Considerations:            
         -Maximum date range for any report in this API is 31 days. For longer ranges, run in loops
         
         -This class uses `DefaultAzureCredential` authentication, so ensure your managed identities are in order
@@ -68,8 +71,7 @@ class GenerateFBAReport:
         -Full list of available reports to generate using this class: 
         https://developer-docs.amazon.com/sp-api/docs/report-type-values-fba    
     """
-    def __init__(self):
-        
+    def __init__(self):    
         # validating current accounts list
         try:
             self.current_accounts = literal_eval(os.getenv('ACCOUNTS_LIST'))
@@ -727,11 +729,10 @@ class GenerateFBAReport:
             
 
 class ReportAssembler:
-    """
-    Compiles and styles/formats DataFrames and .xlsx files/reports
+    """Compiles and styles/formats DataFrames and IO objects, into .xlsx files/reports
     
     Parameters:
-        -account_name: Optional[str] - adds an account name to the report title
+        -account_name: (Optional[str]) adds name to the report title
     """
     
     def __init__(self, account_name: Optional[str] = None):
@@ -763,15 +764,15 @@ class ReportAssembler:
         Returns a sales report with revenue/units sold, and remaining units, grouped by SKU/product 
         
         Parameters: 
-        -orders_df: pd.DataFrame containing contents of 'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL' report
-        -inventory_df: pd.DataFrame containing contents of 'GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA' report
+            -orders_df: DataFrame containing contents of 'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL' report
+            -inventory_df: DataFrame containing contents of 'GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA' report
         
         Returns:
-        -Tuple of pd.DataFrames containing the finished report in index 0, and the raw order data in index 1.        
+            -Tuple of pd.DataFrames containing the finished report in index 0, and the raw order data in index 1        
         """
 
         if not isinstance(orders_df, pd.DataFrame) or not isinstance(inventory_df, pd.DataFrame):
-            raise TypeError("Parameter inputs must be of Pandas DataFrame type")
+            raise TypeError("Parameter inputs must both be of Pandas DataFrame type")
         
         # break if 0 sales (crucial info is derived from the data - no point continuing if its missing)
         if orders_df.empty:
@@ -890,6 +891,7 @@ class ReportAssembler:
         Parameters:
             -df: Union[pd.DataFrame, io.BytesIO] - The main df with the pivot table sales results (Sheet 1)
             -raw_df: Union[pd.DataFrame, io.BytesIO] - The raw orders data (Sheet 2)
+            (Parameters can be Pandas DataFrames or IO Bytes objects)
         """
 
         # validate user input and create an Excel workbook in memory 
@@ -932,6 +934,10 @@ class ReportAssembler:
             for col, fmt in numeric_cols_fmt.items():
                 styler.currency_formatter(col, currency=fmt)
             
+            # add data bars to numeric columns (easier to interpret)
+            for column in ['C', 'D', 'E']:
+                styler.data_bars(column=column, start_row=3)  # avoid grand totals row
+            
             # save
             output_buffer = io.BytesIO()  # reset the initial buffer (corrupts otherwise)
             wb.save(output_buffer)
@@ -944,7 +950,7 @@ class ReportAssembler:
             raise
 
     def set_simple_sales_report_name(self) -> str:
-        """Helper method for `simple_daily_sales`. Generates report_name (up to the user to save with it)"""
+        """Helper method for `simple_daily_sales`. Generates report_name (up to the user to then save with it)"""
         
         if self.generated_workbook is None:
             raise ValueError("Must call `simple_daily_sales` first")
@@ -1045,9 +1051,13 @@ class ReportAssembler:
 
         Parameters:
             -ws (openpyxl.Worksheet): The sheet that you wish to format
-            -table_name (str): The data array will be transformed into a Table. If your report contains
-            multiple accounts, pass a distinct table name for each sheet, as Excel only allows unique
-            names for Tables, even if they're on different tabs. Default='Table1'          
+            -table_name (str): The data array will be transformed into a Table (default='Table1')
+            
+        Considerations:
+            -If your report contains multiple accounts, pass a distinct table name for each sheet, as Excel
+            only allows unique names for Tables, even if they're on different tabs
+            
+            -Worksheet is not saved after formatting, you must save/close Workbook after running this method
         """
         # basic validation
         if not isinstance(ws, Worksheet):
@@ -1083,28 +1093,38 @@ class ReportAssembler:
             return self.report_name
 
 class ReportDownloadOrchestrator:
-    """Class to more easily generate downloadable reports from SP-API (builds off `GenerateFBAReport` class)"""
-    def __init__(self, account_name: str):
-        
+    """
+    Helper class to more easily generate downloadable reports from SP-API, using the `GenerateFBAReport` class
+    
+    Parameters:
+        -account_name: (str) The account initials you wish to generate the report for 
+    
+    Considerations:
+        -Note the requirements for `GenerateFBAReport` class (refer to its docstring)      
+    """
+    def __init__(self, account_name: str):       
         self.account_name = account_name
+        
+        # eager load the required classes
         self.GenerateFBAReport = GenerateFBAReport()
         self.Helpers = Helpers() 
-
-        # get API keys but catch any issues that may arise with account parameters
+        
+        # get API keys, but catch any issues that may arise with account parameters
         try:
             self.GenerateFBAReport.get_amz_keys(account_name=self.account_name)
         except Exception as e:
             logging.error(
-                f"""Could not fetch API keys '{account_name}' during On-Hand report orchestration. 
-                Make sure the account name matches your environment variables and key vault. Example, if your
-                FBA Seller Account is 'Test Seller', make sure you pass 'TS' to the account_name parameter, 
-                that your key vault is 'ts-kv', and that the env-variable is 'TS_VAULT_NAME'"""
+                f"""Could not fetch API keys for '{account_name}' during report orchestration. 
+                Make sure the name exactly matches your environment-variables and key vault. For example, if your
+                FBA Seller Account is 'Test Seller', make sure you pass initials 'TS' to the account_name parameter, 
+                that your key vault is titled 'ts-kv', and that the env-variable is 'TS_VAULT_NAME'"""
             )
             raise
         
+        # get access token once, so you needn't request it each time
         self.GenerateFBAReport.request_access_token()
     
-    # pass date ranges as properties (add more later as they become necessary) 
+    # common date ranges as properties for easy access (TODO: add more later as they become necessary) 
     @property
     def today(self):
         today_date = datetime.now().date()
@@ -1137,22 +1157,26 @@ class ReportDownloadOrchestrator:
         Requests orders by date range from Amazon SP-API (Requests, waits until ready, and downloads)
         
         Parameters:
-            -report_type: str: The name of the SP-API you wish to generate/download
-            -start_date: str: The starting date of the range you wish to run the report for 
-            -end_date: str: The ending date of the range you wish to run the report for 
-            (pass None for start+end dates if you want to run a report for the last 24 hours)
+            -report_type: (str) The name of the SP-API you wish to generate/download
+            -start_date: (str) The starting date of the range you wish to run the report for
+            -end_date: (str) The ending date of the range you wish to run the report for 
         
         Returns:
-            -str: report contents in json, so as to be transferable between functions
+            -str: report contents in json, so as to be transferable between durable functions
+ 
+        Considerations:
+            -Refer to 'GenerateFBAReport' class docstrings for specificities about possible parameters   
+            -You can pass dates to `get_report` method, or use class properties containing some common date-ranges         
         """
         
-        # request the report with the parameters passed 
+        # request the report using the class input parameters 
         self.GenerateFBAReport.request_FBA_report(
             report_type=report_type,
             start_date=start_date,
             end_date=end_date
         )
         
+        # check report status and download once ready 
         df = None
         current_attempt = 1
         max_attempts = 7
@@ -1163,14 +1187,15 @@ class ReportDownloadOrchestrator:
                 if status == 'DONE':
                     self.GenerateFBAReport.get_download_url()
                     df = self.GenerateFBAReport.download_report()
-                    # convert to json to preserve state throughout durable func
                     df = df.to_json(orient='records')
                     return df
                 
                 elif status in ['FATAL', 'CANCELLED']:
                     logging.warning(f"Status: {status} for {report_type}")
-                    # if order reports fail, we must break, as the date ranges are uncertain for existing reports
-                    # inventory reports, however, have no date range so we can default to the most recent report
+                    # if ORDER report fails, must break, as the date ranges are uncertain for existing reports
+                    # INVENTORY reports, however, have no date range so we can default to the most recent report
+                    # they generate every 30 min anyway, near real time data
+                    # TODO: must list all reports that dont require a date range, just doing unsupressed inv for now
                     if report_type == 'GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA':
                         logging.info("Falling back to most recent available inventory report")
                         self.GenerateFBAReport.get_last_ready_report_id(report_type=report_type)
@@ -1178,18 +1203,21 @@ class ReportDownloadOrchestrator:
                         df = self.GenerateFBAReport.download_report()
                         df = df.to_json(orient='records')
                         return df                        
+
                     # if order report, and not inventory, break
                     else:
-                        raise RuntimeError(f"Could not get orders data for date range {start_date}-{end_date}")
+                        raise RuntimeError(f"Couldn't get orders for {start_date}-{end_date}, {max_attempts} attempts")
                 
                 else:
-                    # put a longer timer here because 1M reports take a bit longer to generate anyway
+                    # added longer timer here because SP-API is sensitive
                     self.Helpers.exponential_backoff(n=current_attempt, base_seconds=10, rate_of_growth=1.75)
                     current_attempt += 1
                     
             except Exception as e:
                 logging.error(f"Error on attempt {current_attempt}: {str(e)}")
                 self.Helpers.exponential_backoff(n=current_attempt, base_seconds=10, rate_of_growth=1.75)
+                current_attempt += 1
         
+        # break if couldn't populate df after max attempts
         if df is None:
             raise RuntimeError(f"Couldn't fetch orders for range {start_date}-{end_date} after max attempts")
