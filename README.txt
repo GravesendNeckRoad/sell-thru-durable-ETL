@@ -5,7 +5,7 @@ It generates several reports from Amazon SP-API for several accounts. The report
 The report generated is a 90D sell-thru. It is uploaded to a blob container. Example .xlsx output included in main branch.
 
     Requirements: 
-        (1). AZ Key Vault(s) with SP-API keys: [client secret, client id, refresh token, rotation deadline] 
+        (1). AZ Key Vault(s) with SP-API keys: [client secret, client id, refresh token, rotation deadline] per account
 
         (2). Environment Variables in local.settings.example.json created in your Function App settings
 
@@ -13,11 +13,11 @@ The report generated is a 90D sell-thru. It is uploaded to a blob container. Exa
         (a). For account "Platinum Organisation", create a KV "po-kv"
         (b). Add the SP-API keys specified in (1) to this new KV as secrets          
         (c). In your Function App, create the env-variables specified in (2)
-        (d). If you have several accounts, create a separate KV for each, and add acc initials to ACCOUNTS_LIST
+        (d). If you have several accounts, create a separate KV for each, and add acc name to ACCOUNTS_LIST
 
         In this scenario, modify ACCOUNTS_LIST to include 'PO' (e.g. "['acc1', 'PO']")
         Then, create an env-var "PO_VAULT_NAME" - its value would be the name of the KV ("po-kv")
-        Next, pass the SPI-API keys from (1) as Function App env-variables - title them exactly as shown in (2)
+        Next, pass the SPI-API keys from (1) as Function App env-variables - title them **exactly** as shown in (2)
         For example, within KV "po-kv" create secret name "po-client-secret" with secret value "ABCD1234"
         Then, in the Function App, create an env-variable "CLIENT_SECRET" with value "po-client-secret"
         Repeat for 'CLIENT_SECRET', 'REFRESH_TOKEN' and 'ROTATION_DEADLINE'
@@ -28,6 +28,8 @@ The report generated is a 90D sell-thru. It is uploaded to a blob container. Exa
                              
     Considerations:        
         -Maximum date range for any report in this API is 31 days. For longer ranges, run in loops
+
+        -To run for just 1 of your accounts, modify ACCOUNTS_LIST env-var to contain only that 1 account
         
         -This class uses `DefaultAzureCredential` authentication, so ensure your managed identities are in order
 
@@ -35,3 +37,4 @@ The report generated is a 90D sell-thru. It is uploaded to a blob container. Exa
 
         -Full list of available reports to generate using this class: 
         https://developer-docs.amazon.com/sp-api/docs/report-type-values-fba    
+
